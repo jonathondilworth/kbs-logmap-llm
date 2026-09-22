@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rdf:RDF xmlns="http://knowledgeweb.semanticweb.org/heterogeneity/alignment"
+  xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xsd="http://www.w3.org/2001/XMLSchema#">
+<Alignment><xml>yes</xml><level>0</level><type>??</type>
+<map><Cell><entity1 rdf:resource="http://example.org/a#1"/><entity2 rdf:resource="http://example.org/b#1"/><measure rdf:datatype="xsd:float">1.0</measure><relation>=</relation></Cell></map>
+<map><Cell><entity1 rdf:resource="http://example.org/a#2"/><entity2 rdf:resource="http://example.org/b#2"/><measure rdf:datatype="xsd:float">1.0</measure><relation>=</relation></Cell></map>
+<map><Cell><entity1 rdf:resource="http://example.org/a#3"/><entity2 rdf:resource="http://example.org/b#3"/><measure rdf:datatype="xsd:float">1.0</measure><relation>&lt;</relation></Cell></map>
+<map><Cell><entity1 rdf:resource="http://example.org/a#4"/><entity2 rdf:resource="http://example.org/b#4"/><measure rdf:datatype="xsd:float">1.0</measure><relation>&gt;</relation></Cell></map>
+<map><Cell><entity1 rdf:resource="http://example.org/a#5"/><entity2 rdf:resource="http://example.org/b#5"/><measure rdf:datatype="xsd:float">1.0</measure><relation>?</relation></Cell></map>
+<map><Cell><entity1 rdf:resource="http://example.org/a#6"/><entity2 rdf:resource="http://example.org/b#6"/><measure rdf:datatype="xsd:float">1.0</measure><relation>?</relation></Cell></map>
+<map><Cell><entity1 rdf:resource="http://example.org/b#7"/><entity2 rdf:resource="http://example.org/a#7"/><measure rdf:datatype="xsd:float">1.0</measure><relation>=</relation></Cell></map>
+<map><Cell><entity1 rdf:resource="http://example.org/a#8"/><entity2 rdf:resource="http://example.org/b#8"/><measure rdf:datatype="xsd:float">1.0</measure><relation>=</relation></Cell></map>
+<map><Cell><entity1 rdf:resource="http://example.org/a#9"/><entity2 rdf:resource="http://example.org/b#9"/><measure rdf:datatype="xsd:float">1.0</measure><relation>=</relation></Cell></map>
+<map><Cell><entity1 rdf:resource="http://example.org/a#10"/><entity2 rdf:resource="http://example.org/b#10"/><measure rdf:datatype="xsd:float">1.0</measure><relation>=</relation></Cell></map>
+</Alignment></rdf:RDF>

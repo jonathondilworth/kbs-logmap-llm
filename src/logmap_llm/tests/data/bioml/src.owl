@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns="http://example.org/src#" xml:base="http://example.org/src"
+  xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
+  xmlns:owl="http://www.w3.org/2002/07/owl#" xmlns:ann="http://oaei.ontologymatching.org/bio-ml/ann/">
+  <owl:Ontology rdf:about="http://example.org/src"/>
+  <owl:Class rdf:about="http://example.org/src#S1">
+    <rdfs:label>S 1</rdfs:label>
+    <ann:use_in_alignment>true</ann:use_in_alignment>
+  </owl:Class>
+  <owl:Class rdf:about="http://example.org/src#S2">
+    <rdfs:label>S 2</rdfs:label>
+    <ann:use_in_alignment>true</ann:use_in_alignment>
+  </owl:Class>
+  <owl:Class rdf:about="http://example.org/src#S3">
+    <rdfs:label>S 3</rdfs:label>
+    <ann:use_in_alignment>true</ann:use_in_alignment>
+  </owl:Class>
+  <owl:Class rdf:about="http://example.org/src#S4">
+    <rdfs:label>S 4</rdfs:label>
+    <ann:use_in_alignment>true</ann:use_in_alignment>
+  </owl:Class>
+  <owl:Class rdf:about="http://example.org/src#S5">
+    <rdfs:label>S 5</rdfs:label>
+    <ann:use_in_alignment>false</ann:use_in_alignment>
+  </owl:Class>
+  <owl:Class rdf:about="http://example.org/src#S6">
+    <rdfs:label>S 6</rdfs:label>
+    <ann:use_in_alignment>true</ann:use_in_alignment>
+  </owl:Class>
+</rdf:RDF>

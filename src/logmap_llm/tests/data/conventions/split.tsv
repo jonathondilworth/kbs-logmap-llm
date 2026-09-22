@@ -1,0 +1,8 @@
+SrcEntity	TgtEntity	split
+http://example.org/a#1	http://example.org/b#1	test
+http://example.org/a#9	http://example.org/b#9	test
+http://example.org/a#10	http://example.org/b#10	test
+http://example.org/b#7	http://example.org/a#7	test
+http://example.org/a#5	http://example.org/b#5	test
+http://example.org/a#2	http://example.org/b#2	train
+http://example.org/a#8	http://example.org/b#8	valid

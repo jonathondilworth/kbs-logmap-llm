@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "logmap-llm"
+version = "0.1.0"
+description = "Ontology alignment with LogMap and an LLM oracle, plus a minimal experiment harness"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "JPype1>=1.5",
+  "numpy>=1.26",
+  "openai>=1.30",
+  "owlready2>=0.46",
+  "pandas>=2.1",
+  "pydantic>=2.7",
+  "rdflib>=7.0",
+  "tomli-w>=1.0",
+  "tqdm>=4.66",
+]
+
+[project.optional-dependencies]
+analysis = [
+  "matplotlib>=3.8",
+]
+rag = [
+  "torch>=2.1",
+  "transformers>=4.40",
+]
+test = [
+  "pytest>=8",
+]
+
+[project.scripts]
+logmap-llm = "logmap_llm.pipeline.runner:main"
+logmap-llm-batch = "logmap_llm.experiments.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+namespaces = false
+exclude = [
+  "logmap_llm.tests*",
+  "logmap_llm.oracle.rag.tests*",
+]
+
+[tool.pytest.ini_options]
+# Contractual tests live in tests/; a further set ships inside the package next
+# to the code it guards. Both are declared so the documented `pytest` command
+# runs every supported contract. Neither affects the execution core: the
+# source_digest() generator in experiments/plan.py excludes any path with a
+# `tests` component and any file named test_*.
+testpaths = ["tests", "src"]
+addopts = "-ra"

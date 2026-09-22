@@ -1,0 +1,7 @@
+SrcEntity	TgtEntity	Score
+http://example.org/a#1	http://example.org/b#1	1.0
+http://example.org/a#2	http://example.org/b#2	1.0
+http://example.org/b#7	http://example.org/a#7	1.0
+http://example.org/a#8	http://example.org/b#8	1.0
+http://example.org/a#9	http://example.org/b#9	1.0
+http://example.org/a#10	http://example.org/b#10	1.0

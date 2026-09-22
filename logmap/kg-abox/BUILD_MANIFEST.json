@@ -1,0 +1,36 @@
+{
+  "build": "kg-abox",
+  "role": "spec \u00a77 build 3 \u2014 paired-control + ONLY the re-implemented undeclared-ABox-predicate detector (feature-gated, OFF by default).",
+  "reimplementation": {
+    "vs_prototype": "Prototype iterated DECLARED OWLAnnotationProperty signatures filtered by the substring '/property/', deduped by LOCAL NAME, and registered EVERY match as an OBJECT property (OAEI-non-compliant + mistyped).",
+    "new_design": "Discovers predicates from ACTUAL ABox usage (ANNOTATION_ASSERTION axioms with individual/resource subjects); tallies literal-valued vs resource-valued uses per predicate; classifies literal->DATA property, resource->OBJECT property, mixed->undeclared_abox_mixed_use_policy (default majority_tie_data); keys by COMPLETE IRI; excludes RDF/RDFS/OWL/XSD/metadata built-ins + already-declared properties; deterministic (sorted by IRI); emits an audit. No /property/ substring, no track/filename logic.",
+    "files_changed": [
+      "Parameters.java (flag index_undeclared_abox_predicates=false + policy/metadata config + parsing)",
+      "indexing/OntologyProcessing.java (indexUndeclaredAboxPredicates + classify/exclude/register helpers; invocation after declared property processing)"
+    ],
+    "mixed_use_policy": "default 'both' \u2014 register an undeclared predicate in EVERY property lane it is actually used in (literal-use->data lane, resource-use->object lane, both->BOTH). This is the correct cross-KG policy: the same logical property is often a resource in one KG and a literal in another, and single-lane typing would split the two sides. Options: majority_tie_data/object, data, object."
+  },
+  "toolchain": {
+    "maven": "3.8.7",
+    "jdk_local_build": "17.0.19",
+    "canonical_jdk": "21 (xgpu)"
+  },
+  "artifact_local_jdk17": {
+    "jar_sha256": "2d8caf93bfb1823a621b52203cd045070f0ea28933932ddff9d202a51dd4ff24"
+  },
+  "verification": {
+    "compiles": "PASS (JDK 17 + JDK 21)",
+    "byte_inert_conference": "PASS \u2014 kg-abox (flag ON, both policy) == paired-control on cmt<->Conference (identical alignments); audit correctly absent.",
+    "kg_sentinel_memoryalpha_stexpanded": {
+      "control_paired_control_flag_off": "2495 total, 0 property, 0/41 (== spec \u00a722.3 baseline)",
+      "kg_abox_flag_on_both_policy": "2578 total, 77 distinct property mappings, 40/41 correct (recall 0/41 -> 0.976)",
+      "verdict": "PASS \u2014 meets the \u00a722.3 sentinel (+77 property mappings; property recall 0/41 -> 40/41), achieved with correct usage-based typing rather than the prototype's force-all-object.",
+      "diagnosis_of_first_attempt": "majority-vote policy first gave 29/41; all 41 predicates were discovered but 11 genuinely mixed-use predicates (e.g. father: memoryalpha 5 lit/263 res vs stexpanded 227 lit/186 res) were split into opposite lanes. The 'both' policy registers mixed predicates in both lanes, recovering all 11."
+    },
+    "known_artifact": "'both' emits symmetric-mixed pairs in both lanes (raw_property_lines=120 vs 77 distinct). Harmless for URI-pair evaluation (deduped); but the M_ask/bridging path (Python) must dedupe property mappings by URI pair before oracle consultation to avoid double-asking a mixed predicate. Tracked for P4/P8.",
+    "java_detector_fixtures": "PASS 14/14 \u2014 synthetic-ontology integration test (builds/kg-abox/fixtures/) drives the real detector: undeclared literal->DATA, resource->OBJECT, mixed->BOTH, built-in excluded, declared skipped, same-localname-diff-ns distinct (full-IRI), missing labels no-crash, feature-off parity. (imports covered by construction via Imports.INCLUDED.)"
+  },
+  "feature_default": "OFF (index_undeclared_abox_predicates=false); enable via parameters.txt: index_undeclared_abox_predicates|true",
+  "deployed_params_enable_the_feature": "YES (audit FIX-1, 2026-07-12). The shipped kg-abox parameters.txt (src + target, gitignored under /builds/*/src/) now ends with `index_undeclared_abox_predicates|true` + `undeclared_abox_mixed_use_policy|both` — the SOLE parameters delta vs paired-control. Params sha changed 7f27d962 -> 16b56a533b0c9bfb, so kg-abox no longer aliases paired-control's parameters_sha256. BEFORE this fix all three builds shipped byte-identical params (7f27d962) and the detector never fired -> kg-abox x KG silently == paired-control (property recall 0/41). VERIFY at the P7 gate: run the DEPLOYED params through run_experiment.py / run_matcher_parallel.sh on memoryalpha-stexpanded and hard-fail unless property recall == 40/41 and output != paired-control.",
+  "build_command": "mvn -DskipTests clean package (run with --add-opens java.base/{lang,lang.reflect,util}=ALL-UNNAMED on JDK 17+)"
+}

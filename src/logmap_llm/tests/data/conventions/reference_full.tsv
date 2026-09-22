@@ -1,0 +1,11 @@
+SrcEntity	TgtEntity	Relation
+http://example.org/a#1	http://example.org/b#1	=
+http://example.org/a#2	http://example.org/b#2	=
+http://example.org/a#3	http://example.org/b#3	<
+http://example.org/a#4	http://example.org/b#4	>
+http://example.org/a#5	http://example.org/b#5	?
+http://example.org/a#6	http://example.org/b#6	?
+http://example.org/b#7	http://example.org/a#7	=
+http://example.org/a#8	http://example.org/b#8	=
+http://example.org/a#9	http://example.org/b#9	=
+http://example.org/a#10	http://example.org/b#10	=

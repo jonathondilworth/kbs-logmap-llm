@@ -1,0 +1,10 @@
+{
+  "build": "paired-control",
+  "role": "spec §7 build 2 — normal-verbatim + generic correctness fixes needed by both causal arms (the validated instance-feedback index fix). The causal-isolation control for the KG patch.",
+  "derivation": "normal-verbatim (clean 3-file state) + ONLY the 81dd9f4 instance-feedback fix in CandidateMappingManager.java (getIRIStr4ObjPropIndex -> getIRIStr4IndividualIndex, gated on OracleManager.isActive()).",
+  "toolchain": {"maven": "3.8.7", "jdk_local_build": "17.0.19", "canonical_jdk": "21 (xgpu)"},
+  "artifact_local_jdk17": {"jar_sha256": "1154a0cfd6e39b0877f27ab9b3433e49ef8349ef1c5408d6dea8045467258da3"},
+  "parameters_sha256": "7f27d962a3e504d309809b46e117f8b1aa1ffcb3d5f6f22abf7a78d06e3ff92d",
+  "verification": "vs normal-verbatim (same JDK17): 219/220 .class files byte-identical; sole diff is CandidateMappingManager.class (the fix). Fix is oracle-gated => plain MATCHER runs are byte-identical to normal-verbatim (dead code without an active oracle).",
+  "build_command": "mvn -DskipTests clean package"
+}

@@ -1,0 +1,5 @@
+SrcEntity	TgtEntity	Score
+http://example.org/src#S1	http://example.org/tgt#T1	1.0
+http://example.org/src#S2	http://example.org/tgt#T2	1.0
+http://example.org/src#S3	http://example.org/tgt#T3	1.0
+http://example.org/src#S4	http://example.org/tgt#T4	1.0

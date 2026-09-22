@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns="http://example.org/tgt#" xml:base="http://example.org/tgt"
+  xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
+  xmlns:owl="http://www.w3.org/2002/07/owl#" xmlns:ann="http://oaei.ontologymatching.org/bio-ml/ann/">
+  <owl:Ontology rdf:about="http://example.org/tgt"/>
+  <owl:Class rdf:about="http://example.org/tgt#T1">
+    <rdfs:label>T 1</rdfs:label>
+    <ann:use_in_alignment>true</ann:use_in_alignment>
+  </owl:Class>
+  <owl:Class rdf:about="http://example.org/tgt#T2">
+    <rdfs:label>T 2</rdfs:label>
+    <ann:use_in_alignment>true</ann:use_in_alignment>
+  </owl:Class>
+  <owl:Class rdf:about="http://example.org/tgt#T3">
+    <rdfs:label>T 3</rdfs:label>
+    <ann:use_in_alignment>true</ann:use_in_alignment>
+  </owl:Class>
+  <owl:Class rdf:about="http://example.org/tgt#T4">
+    <rdfs:label>T 4</rdfs:label>
+    <ann:use_in_alignment>true</ann:use_in_alignment>
+  </owl:Class>
+  <owl:Class rdf:about="http://example.org/tgt#T5">
+    <rdfs:label>T 5</rdfs:label>
+    <ann:use_in_alignment>true</ann:use_in_alignment>
+    <owl:deprecated rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean">true</owl:deprecated>
+  </owl:Class>
+  <rdf:Description rdf:about="http://example.org/tgt#T6">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:label>T 6</rdfs:label>
+    <ann:use_in_alignment>false</ann:use_in_alignment>
+  </rdf:Description>
+</rdf:RDF>

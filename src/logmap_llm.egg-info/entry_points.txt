@@ -1,0 +1,3 @@
+[console_scripts]
+logmap-llm = logmap_llm.pipeline.runner:main
+logmap-llm-batch = logmap_llm.experiments.cli:main

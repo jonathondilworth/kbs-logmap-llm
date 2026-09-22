@@ -1,0 +1,12 @@
+http://example.org/a#1|http://example.org/b#1|=|0.9|CLS
+http://example.org/a#2|http://example.org/b#2|<|0.8|CLS
+http://example.org/a#3|http://example.org/b#3|=|0.8|CLS
+http://example.org/b#4|http://example.org/a#4|<|0.7|CLS
+http://example.org/a#5|http://example.org/b#5|=|0.6|CLS
+http://example.org/a#7|http://example.org/b#7|=|0.9|CLS
+http://example.org/a#8|http://example.org/b#8|=|0.9|CLS
+http://example.org/a#10|http://example.org/b#10|=|0.9|CLS
+http://example.org/a#11|http://example.org/b#11|=|0.5|CLS
+http://example.org/a#12|http://example.org/b#12|>|0.5|CLS
+http://example.org/a#1|http://example.org/b#1|=|0.9|CLS
+http://example.org/a#13|http://example.org/b#13|?|0.5|CLS

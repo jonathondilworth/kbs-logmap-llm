@@ -1,0 +1,58 @@
+{
+  "_comment": [
+    "Annotation predicate IRIs recognised when extracting preferred labels, synonyms, and",
+    "lexical annotations from an ontology. These are EXTERNAL IDENTIFIERS: each string must",
+    "match the RDF byte-for-byte, so they are data rather than authored source. They live in",
+    "this file, and not in ontology/access.py, so that adding or retiring a vocabulary is a",
+    "data change. Order is irrelevant (each group is loaded into a set); duplicates are",
+    "harmless. 'lexical_extra' is unioned with the other two groups to form the lexical set.",
+    "Classification rule: a predicate goes in the group matching its SEMANTICS, not its",
+    "vocabulary — definition/gloss predicates (e.g. oboInOwl#hasDefinition) are lexical",
+    "context, never synonyms (a whole definition sentence is not an alternative name), and",
+    "preferred-label predicates belong in 'preferred_label' whichever vocabulary they come",
+    "from. Moving a predicate between groups changes prompt content (see convention 3)."
+  ],
+  "preferred_label": [
+    "http://www.w3.org/2000/01/rdf-schema#label",
+    "http://www.w3.org/2004/02/skos/core#prefLabel",
+    "http://purl.obolibrary.org/obo/IAO_0000111",
+    "http://purl.obolibrary.org/obo/IAO_0000589",
+    "http://bioontology.org/projects/ontologies/birnlex#preferred_label"
+  ],
+  "synonym": [
+    "http://www.geneontology.org/formats/oboInOwl#hasRelatedSynonym",
+    "http://www.geneontology.org/formats/oboInOwl#hasExactSynonym",
+    "http://www.geneontology.org/formats/oboInOWL#hasExactSynonym",
+    "http://purl.bioontology.org/ontology/SYN#synonym",
+    "http://scai.fraunhofer.de/CSEO#Synonym",
+    "http://purl.obolibrary.org/obo/synonym",
+    "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#FULL_SYN",
+    "http://www.ebi.ac.uk/efo/alternative_term",
+    "http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#Synonym",
+    "http://bioontology.org/projects/ontologies/fma/fmaOwlDlComponent_2_0#Synonym",
+    "http://bioontology.org/projects/ontologies/birnlex#synonyms",
+    "http://www.w3.org/2004/02/skos/core#altLabel",
+    "https://cfpub.epa.gov/ecotox#latinName",
+    "https://cfpub.epa.gov/ecotox#commonName",
+    "https://www.ncbi.nlm.nih.gov/taxonomy#scientific_name",
+    "https://www.ncbi.nlm.nih.gov/taxonomy#synonym",
+    "https://www.ncbi.nlm.nih.gov/taxonomy#equivalent_name",
+    "https://www.ncbi.nlm.nih.gov/taxonomy#genbank_synonym",
+    "https://www.ncbi.nlm.nih.gov/taxonomy#common_name",
+    "http://purl.obolibrary.org/obo/IAO_0000118"
+  ],
+  "lexical_extra": [
+    "http://www.geneontology.org/formats/oboInOwl#hasDefinition",
+    "http://www.w3.org/2000/01/rdf-schema#comment",
+    "http://www.geneontology.org/formats/oboInOwl#hasDbXref",
+    "http://purl.org/dc/elements/1.1/description",
+    "http://purl.org/dc/terms/description",
+    "http://purl.org/dc/elements/1.1/title",
+    "http://purl.org/dc/terms/title",
+    "http://purl.obolibrary.org/obo/IAO_0000115",
+    "http://purl.obolibrary.org/obo/IAO_0000600",
+    "http://purl.obolibrary.org/obo/IAO_0000602",
+    "http://purl.obolibrary.org/obo/IAO_0000601",
+    "http://www.geneontology.org/formats/oboInOwl#hasOBONamespace"
+  ]
+}
