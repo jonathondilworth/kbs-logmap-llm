@@ -24,12 +24,13 @@ from logmap_llm.config.loader import (
     load_and_validate_config,
     print_config_summary,
 )
-from logmap_llm.pipeline.contracts import TimingRecord
+from logmap_llm.pipeline.contracts import TimingRecord, ModelSelectionResult
 from logmap_llm.pipeline.paths import PipelinePaths
 from logmap_llm.pipeline.context import PipelineContext
 from logmap_llm.pipeline.orchestration import (
     align,
     prompt_build,
+    select_model,
     consult_oracle,
     refine_alignment,
     evaluate,
@@ -201,6 +202,24 @@ def main(args: Namespace | None = None) -> int:
             success(f"Number of LLM oracle user prompts: {prompt_build_result.n_prompts}{success_suffix}")
 
 
+        # AUTOMATIC MODEL SELECTION (optional Step 2b)
+        ###############################################
+        # off unless [model_selection].automatic = true; the winner replaces [oracle] for
+        # every later phase, so `cfg` is re-read from the shared context afterwards
+
+        model_selection_result = ModelSelectionResult()
+
+        if cfg.automatic_model_selection:
+
+            model_selection_start_time = time.time()
+
+            model_selection_result = select_model(pipeline_ctx, prompt_build_result)
+
+            timing.model_selection_seconds = time.time() - model_selection_start_time
+
+            cfg = pipeline_ctx.cfg
+
+
         # CONSULT ORACLE
         ################
 
@@ -280,6 +299,7 @@ def main(args: Namespace | None = None) -> int:
         all_task_times = [
             timing.align_seconds,
             timing.prompt_build_seconds,
+            timing.model_selection_seconds,
             timing.consult_seconds,
             timing.refine_seconds,
             timing.evaluate_seconds,
@@ -295,7 +315,7 @@ def main(args: Namespace | None = None) -> int:
         print_timing_summary(timing, n_consultations)
 
         print_experimental_parameters(
-            cfg, oracle_result, prompt_build_result, timing
+            cfg, oracle_result, prompt_build_result, timing, model_selection_result,
         )
 
 
@@ -319,6 +339,7 @@ def main(args: Namespace | None = None) -> int:
                 prompt_build_result,
                 run_paths,
                 stopped_after=stopped_after,
+                model_selection=model_selection_result,
             )
             success("LogMap-LLM session ending")
             exit_code = 0

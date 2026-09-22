@@ -640,6 +640,11 @@ def _validate_native(config: Mapping[str, Any], label: str) -> dict[str, Any]:
         validated = validate_config(copy.deepcopy(dict(config)))
     except Exception as exc:
         raise PlanError(f"{label}: invalid LogMapLLM config: {exc}") from exc
+    if validated.automatic_model_selection:
+        raise PlanError(
+            f"{label}: model_selection.automatic is a single-run feature; a batch fixes each "
+            "job's model through its models axis"
+        )
     # A campaign may never be ambiguous about how its pseudo-negatives were built. Enforced
     # at generation rather than in the config schema: frozen per-job configs in completed
     # batches carry few_shot_k > 0 and no layout, and are re-validated by aggregate/import/

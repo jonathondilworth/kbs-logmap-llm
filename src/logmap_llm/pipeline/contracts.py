@@ -104,6 +104,18 @@ class OracleResult:
 
 
 @dataclass
+class ModelSelectionResult:
+    """Result of automatic model selection (Step 2b; only when [model_selection].automatic)."""
+    questions: int = 0
+    ranking: list[dict] = field(default_factory=list)   # one record per candidate, best first
+    selected: dict | None = None                        # the winning record
+
+    @property
+    def performed(self) -> bool:
+        return self.selected is not None
+
+
+@dataclass
 class RefinementResult:
     """Result of the alignment refinement step."""
     refined_mappings: pd.DataFrame | None = None
@@ -134,6 +146,7 @@ class TimingRecord:
     """Timing information for pipeline steps."""
     align_seconds: float | None = None
     prompt_build_seconds: float | None = None
+    model_selection_seconds: float | None = None
     consult_seconds: float | None = None
     refine_seconds: float | None = None
     evaluate_seconds: float | None = None

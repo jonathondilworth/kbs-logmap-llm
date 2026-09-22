@@ -177,6 +177,14 @@ class PipelinePaths:
         """The same with a header and the logprob-derived LLM_confidence column."""
         return self._artifact("annotated.tsv")
 
+    def model_ranking_json(self) -> Path:
+        """Anchor-derived questions for automatic model selection (pipeline/model_selection.py)."""
+        return self._artifact("model_ranking_prompts.json")
+
+    def model_selection_json(self) -> Path:
+        """Per-candidate scores and the selected model configuration."""
+        return self._artifact("model_selection.json")
+
     def eval_json(self) -> Path:
         return self.output_dir / "evaluation_results.json"
 

@@ -161,6 +161,12 @@ class FewShotConfig(StrictConfigModel):
     rag_failure_policy: Literal["error", "record_zero_shot"] = "error"
     rag_cache_dir: Optional[str] = None
     prebuilt_few_shot_bundle_path: Optional[str] = None
+    # Which anchors a prebuilt bundle may draw its demonstrations from: 'leave-one-task-out'
+    # (every example comes from another task; the ISWC campaigns) or 'pooled' (the receiver's
+    # own anchors are eligible as well). Unset means leave-one-task-out, so frozen configs and
+    # the bundles they bind stay unchanged; the loader refuses a bundle built under the other
+    # policy (see pipeline/rag_fewshot.PREBUILT_SELECTION_POLICIES).
+    prebuilt_anchor_pool: Optional[Literal["leave-one-task-out", "pooled"]] = None
 
     # How the k/2 pseudo-negatives are constructed:
     #
@@ -188,6 +194,17 @@ class FewShotConfig(StrictConfigModel):
         "hard", "random", "hard-similar",          # legacy sampler strategy names
         "query-rag", "static-hard", "static-random", "zero-shot",  # RAG mode names (oracle/rag)
     }
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_sapbert_encoder_kind(cls, data: dict) -> dict:
+        """Accept the legacy `rag_encoder_kind = "sapbert"` (the CLS-pooled encoder before it
+        was generalised) so the frozen configs of completed campaigns, whose sealed alignments
+        the bundle builder reads, still load."""
+        if isinstance(data, dict) and data.get("rag_encoder_kind") == "sapbert":
+            warn("few_shot.rag_encoder_kind 'sapbert' is DEPRECATED; use 'cls_transformer' instead.")
+            return {**data, "rag_encoder_kind": "cls_transformer"}
+        return data
 
     @model_validator(mode="after")
     def _validate_few_shot(self):
@@ -257,6 +274,11 @@ class FewShotConfig(StrictConfigModel):
                 raise ValueError(
                     "prebuilt_few_shot_bundle_path requires rag_failure_policy='error'"
                 )
+        elif self.prebuilt_anchor_pool is not None:
+            raise ValueError(
+                "few_shot.prebuilt_anchor_pool describes a prebuilt bundle; set "
+                "prebuilt_few_shot_bundle_path or remove it"
+            )
         return self
 
 
@@ -547,6 +569,20 @@ class EvaluationConfig(StrictConfigModel):
         return options
 
 
+class ModelSelectionConfig(StrictConfigModel):
+    """`[model_selection]`: automatic, self-supervised model selection; off unless
+    `automatic = true`. LogMap's anchors are assumed correct, so every candidate is asked the
+    prompts of up to `max_anchors` anchors plus one constructed negative each, and the one
+    answering most correctly becomes the run's oracle (pipeline/model_selection.py). No
+    reference alignment is read."""
+    automatic: bool = False
+    max_anchors: int = Field(default=10, ge=1)
+    seed: int = 42
+    # [[model_selection.candidates]]: partial [oracle] tables (model_name, base_url, api_key,
+    # interaction_style, ...) merged over the base [oracle]; see candidate_oracle_configs()
+    candidates: list[dict] = Field(default_factory=list)
+
+
 class LogMapLLMConfig(StrictConfigModel):
     """
     Top-level configuration schema for LogMap-LLM; validates the entire TOML
@@ -560,6 +596,46 @@ class LogMapLLMConfig(StrictConfigModel):
     outputs: OutputsConfig
     pipeline: PipelineConfig
     evaluation: EvaluationConfig = Field(default_factory=EvaluationConfig)
+    # Optional, so configs (and the frozen job dumps derived from them) that never mention it
+    # are unchanged.
+    model_selection: Optional[ModelSelectionConfig] = None
+
+    @property
+    def automatic_model_selection(self) -> bool:
+        return self.model_selection is not None and self.model_selection.automatic
+
+    def candidate_oracle_configs(self) -> list[OracleConfig]:
+        """The permitted model configurations: each candidate merged over the base [oracle]."""
+        base = self.oracle.model_dump()
+        candidates = self.model_selection.candidates if self.model_selection else []
+        return [OracleConfig.model_validate({**base, **candidate}) for candidate in candidates]
+
+    @model_validator(mode="after")
+    def validate_model_selection(self) -> "LogMapLLMConfig":
+        """Automatic selection needs at least two candidates, each a valid [oracle] table
+        naming a model, and a consultation to hand the winner to."""
+        if not self.automatic_model_selection:
+            return self
+        candidates = self.model_selection.candidates
+        if len(candidates) < 2:
+            raise ValueError(
+                "model_selection.automatic=true requires at least two [[model_selection.candidates]]"
+            )
+        for index, candidate in enumerate(candidates):
+            if not str(candidate.get("model_name", "")).strip():
+                raise ValueError(f"model_selection.candidates[{index}] must name a model_name")
+            try:
+                OracleConfig.model_validate({**self.oracle.model_dump(), **candidate})
+            except ValueError as exc:
+                raise ValueError(
+                    f"model_selection.candidates[{index}] is not a valid [oracle] table: {exc}"
+                ) from exc
+        if self.pipeline.consult_oracle != ConsultMode.CONSULT:
+            raise ValueError(
+                "model_selection.automatic=true requires pipeline.consult_oracle='consult' "
+                "(the selected model must be the one consulted)"
+            )
+        return self
 
     @model_validator(mode="after")
     def validate_sibling_negative_requirements(self) -> "LogMapLLMConfig":

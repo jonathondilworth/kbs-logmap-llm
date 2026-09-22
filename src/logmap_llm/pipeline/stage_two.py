@@ -525,41 +525,36 @@ def main():
     # Bidirectional mode applies to CLASS candidates; typed OPROP/DPROP/INST rows are routed
     # through the forward property/instance templates (hybrid lanes).
 
-    if bidirectional_mode:
-        step("[STEP 2] CONSTRUCTING BIDIRECTIONAL TEMPLATES.")
-        m_ask_oracle_user_prompts, n_equiv_cands, n_non_equiv_skipped = (
-            opb.build_oracle_user_prompts_bidirectional(
-                oupt_name, config.alignmentTask.onto_source_filepath, config.alignmentTask.onto_target_filepath, m_ask_df,
-                OA_source=OA_source, OA_target=OA_target,
-                sibling_selector=sibling_selector,
-                # hybrid lanes: typed property/instance rows keep their forward templates
-                property_prompt_name=property_prompt_template_name,
-                instance_prompt_name=instance_prompt_template_name,
-                property_prompt_function=property_prompt_function,
-                instance_prompt_function=instance_prompt_function,
-                data_property_prompt_name=data_property_prompt_template_name,
-                data_property_prompt_function=data_property_prompt_function,
-                ctx=prompt_context,
-            )
-        )
-        step(f"[STEP 2] (n_prompts={str(len(m_ask_oracle_user_prompts))})")
-        step(f"[STEP 2] (n_equiv_cands={str(n_equiv_cands)})")
-        step(f"[STEP 2] (n_non_equiv_skipped={str(n_non_equiv_skipped)})")
+    # One renderer serves M_ask and, under automatic model selection, the anchor questions.
+    template_kwargs = dict(
+        OA_source=OA_source, OA_target=OA_target,
+        sibling_selector=sibling_selector,
+        # hybrid lanes: typed property/instance rows keep their forward templates
+        property_prompt_name=property_prompt_template_name,
+        instance_prompt_name=instance_prompt_template_name,
+        property_prompt_function=property_prompt_function,
+        instance_prompt_function=instance_prompt_function,
+        data_property_prompt_name=data_property_prompt_template_name,
+        data_property_prompt_function=data_property_prompt_function,
+        ctx=prompt_context,
+    )
+    onto_filepaths = (config.alignmentTask.onto_source_filepath, config.alignmentTask.onto_target_filepath)
 
-    else:
+    def build_prompts(candidates_df: pd.DataFrame) -> dict:
+        """One user prompt per candidate row (forward and reverse per class row when bidirectional)."""
+        if bidirectional_mode:
+            step("[STEP 2] CONSTRUCTING BIDIRECTIONAL TEMPLATES.")
+            prompts, n_equiv_cands, n_non_equiv_skipped = opb.build_oracle_user_prompts_bidirectional(
+                oupt_name, *onto_filepaths, candidates_df, **template_kwargs,
+            )
+            step(f"[STEP 2] (n_prompts={str(len(prompts))})")
+            step(f"[STEP 2] (n_equiv_cands={str(n_equiv_cands)})")
+            step(f"[STEP 2] (n_non_equiv_skipped={str(n_non_equiv_skipped)})")
+            return prompts
         step("[STEP 2] CONSTRUCTING TEMPLATES.")
-        m_ask_oracle_user_prompts = opb.build_oracle_user_prompts(
-            oupt_name, config.alignmentTask.onto_source_filepath, config.alignmentTask.onto_target_filepath, m_ask_df,
-            OA_source=OA_source, OA_target=OA_target,
-            sibling_selector=sibling_selector,
-            property_prompt_name=property_prompt_template_name,
-            instance_prompt_name=instance_prompt_template_name,
-            property_prompt_function=property_prompt_function,
-            instance_prompt_function=instance_prompt_function,
-            data_property_prompt_name=data_property_prompt_template_name,
-            data_property_prompt_function=data_property_prompt_function,
-            ctx=prompt_context,
-        )
+        return opb.build_oracle_user_prompts(oupt_name, *onto_filepaths, candidates_df, **template_kwargs)
+
+    m_ask_oracle_user_prompts = build_prompts(m_ask_df)
 
     if m_ask_oracle_user_prompts is not None:
         step(f"[STEP 2] Number of LLM Oracle user prompts obtained: {len(m_ask_oracle_user_prompts)}", important=True)
@@ -583,6 +578,33 @@ def main():
         _atomic_write_json(prompts_json_fp, m_ask_oracle_user_prompts)
 
         step(f'[STEP 2] LLM Oracle user prompts saved to file: {prompts_json_fp}')
+
+
+    ###
+    # MODEL-RANKING PROMPTS (automatic model selection)
+    ###################################################
+    # LogMap's anchors are assumed correct, so a sample of them (plus one constructed negative
+    # each) becomes questions with known answers, rendered exactly like the M_ask prompts.
+    # Step 2b asks every permitted model these questions and keeps the best.
+
+    if config.automatic_model_selection:
+        from logmap_llm.pipeline.model_selection import build_ranking_set, write_ranking_artifact
+
+        selection = config.model_selection
+        ranking_df = build_ranking_set(mappings, m_ask_df, selection.max_anchors, selection.seed)
+        if ranking_df.empty:
+            raise RuntimeError(
+                "automatic model selection needs at least one LogMap anchor outside M_ask, "
+                "but the initial alignment holds none"
+            )
+        step(f"[STEP 2] Building model-ranking prompts for {len(ranking_df)} anchor questions "
+             f"(max_anchors={selection.max_anchors}, seed={selection.seed})", important=True)
+        kept = write_ranking_artifact(
+            run_paths.model_ranking_json(), ranking_df, build_prompts(ranking_df),
+            max_anchors=selection.max_anchors, seed=selection.seed,
+        )
+        step(f"[STEP 2] Model-ranking prompts saved to file: {run_paths.model_ranking_json()} "
+             f"({len(kept)} of {len(ranking_df)} questions rendered)")
 
 
     ###
@@ -652,6 +674,7 @@ def main():
                     data_property_prompt_family=data_property_prompt_template_name,
                     instance_prompt_family=instance_prompt_template_name,
                     bidirectional=bidirectional_mode,
+                    anchor_pool=config.few_shot.prebuilt_anchor_pool,
                 )
             else:
                 # the class user-prompt template (bound with the sibling selector when required)

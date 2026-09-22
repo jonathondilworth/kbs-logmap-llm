@@ -40,6 +40,23 @@ logmap_refined_alignment_output_dirpath = "output/refined-alignment"
 [evaluation]
 evaluate = true
 reference_alignment_path = "data/reference.rdf"
+
+# optional: automatic model selection (off by default)
+# each candidate is a partial [oracle] table 
+# local and hosted models can mix (see below)
+
+[model_selection]
+automatic = true
+max_anchors = 10                       # anchors sampled for ranking, one constructed negative each
+
+[[model_selection.candidates]]
+model_name = "deepseek/deepseek-v4-flash"
+
+[[model_selection.candidates]]
+model_name = "Qwen3.5-122B-A10B"
+base_url = "http://127.0.0.1:8000/v1"  # a local vLLM/SGLang server
+api_key = "EMPTY"
+interaction_style = "vllm"
 ```
 
 The config is a TOML file validated by a Pydantic schema; at minimum it needs `[alignmentTask]` (task name and the two ontology paths), `[oracle]` (model name), and `[outputs]` (three output directories). You also need a LogMap bundle on disk (`logmap-matcher-4.0.jar`, `java-dependencies/`, `parameters.txt`), found under `./logmap` by default or wherever `alignmentTask.logmap_parameters_dirpath` points. 
@@ -52,7 +69,17 @@ The CLI flags:
 - `--no-cache` — disable owlready2 quadstore caching and parse the ontologies from scratch.
 - `--run-root DIR` — root all outputs under `DIR`, creating `logmapllm-outputs`, `logmap-initial-alignment` and `logmap-refined-alignment` subdirectories.
 
-The run executes five phases in order: (1) align, (2) prompt build, (3) oracle consultation, (4) refinement, and (5) evaluation; followed by reporting. Prompt building and evaluation each run in their own subprocess, since owlready2 and JPype contained to a single process has be known to cause problems; we also separate the [DeepOnto](https://github.com/KRR-Oxford/DeepOnto) evaluator into its own JVM spawned by a subprocess when used.
+The run executes five phases in order: (1) align, (2) prompt build, (3) oracle consultation, (4) refinement, and (5) evaluation; followed by reporting. With `[model_selection] automatic = true` an extra phase (2b) runs between prompt build and consultation; see below. Prompt building and evaluation each run in their own subprocess, since owlready2 and JPype contained to a single process has be known to cause problems; we also separate the [DeepOnto](https://github.com/KRR-Oxford/DeepOnto) evaluator into its own JVM spawned by a subprocess when used.
+
+### New Feature: Automatic model selection
+
+This is off by default. Note that LogMap's anchors, the initial-alignment equivalences it did not escalate to $M_{ask}$, are assumed correct. They can be turned into questions with _known_ answers without a reference (ground truth). The pipeline (stage 2/b) can then sample up to `max_anchors` as positives, construct one negative per anchor, and produce 'automatic selection prompts'. Every `[[model_selection.candidates]]` entry is tested on these prompts, and the candidates are ranked by correct answers. The LLM oracle ranked top-1 is selected for use during the remainder of the pipeline (a candidate whose consultation aborts is ranked last). 
+
+The questions and the ranking are written next to the prompts (`...-model_ranking_prompts.json`, `...-model_selection.json`) and summarised in `run_result.json`. The batch harness (`logmap-llm-batch`) refuses the setting, since a batch fixes each job's model on its `models` axis.
+
+### New Feature: Collective anchors
+
+The few-shot bundle (`few_shot.prebuilt_few_shot_bundle_path`) is set, by default, to leave-one-task-out, where every demonstration comes from another task in the plan. However, now a plan carrying `"anchor_pool": "pooled"` lets the receiver's own anchors compete as well (the campaign-wide $M_{ask}$ exclusion is unchanged).
 
 ## Project Structure
 
@@ -75,8 +102,6 @@ logmap_llm/
 
 ## Roadmap
 
-* Automatic model selection.
-* Collective pooled anchors.
 * Improved documentation.
 
 ## License

@@ -21,6 +21,7 @@ from logmap_llm.pipeline.contracts import (
     AlignmentResult,
     PromptBuildResult,
     OracleResult,
+    ModelSelectionResult,
     RefinementResult,
     EvaluationResult,
 )
@@ -506,14 +507,10 @@ def prompt_build(ctx: PipelineContext, initial_alignment: AlignmentResult) -> Pr
     fatal(f"unable to match on: {ctx.cfg.pipeline.build_oracle_prompts}")
 
 
-def consult_oracle(ctx: PipelineContext, initial_alignment: AlignmentResult, prompt_build_result: PromptBuildResult) -> OracleResult:
-    """
-    Step 3: Consult Oracle for mappings to ask.
-    """
+def _developer_prompts(cfg) -> tuple[str, dict | None]:
+    """The class developer prompt and, when property/instance user templates are configured,
+    the per-entity-type map that routes OPROP/DPROP/INST consultations to their own."""
     import logmap_llm.oracle.prompts.developer as dp
-    import logmap_llm.oracle.consultation as oc
-
-    step("\n[Step 3] Consult Oracle for mappings to ask")
 
     ###
     # CLS PROMPT
@@ -522,9 +519,9 @@ def consult_oracle(ctx: PipelineContext, initial_alignment: AlignmentResult, pro
     developer_prompt_map = {}
 
     cls_dev_prompt_text = dp.get_developer_prompt(
-        name=ctx.cfg.prompts.cls_dev_prompt_template_name,
-        answer_format=ctx.cfg.oracle.answer_format,
-        response_mode=ctx.cfg.oracle.response_mode,
+        name=cfg.prompts.cls_dev_prompt_template_name,
+        answer_format=cfg.oracle.answer_format,
+        response_mode=cfg.oracle.response_mode,
     )
 
     ###
@@ -533,15 +530,15 @@ def consult_oracle(ctx: PipelineContext, initial_alignment: AlignmentResult, pro
 
     prop_dev_prompt_text = None
     if (
-        ctx.cfg.prompts.prop_usr_prompt_template_name
-        or ctx.cfg.prompts.dprop_usr_prompt_template_name
+        cfg.prompts.prop_usr_prompt_template_name
+        or cfg.prompts.dprop_usr_prompt_template_name
     ):
         prop_dev_prompt_text = dp.get_developer_prompt(
-            ctx.cfg.prompts.prop_dev_prompt_template_name,
-            answer_format=ctx.cfg.oracle.answer_format,
-            response_mode=ctx.cfg.oracle.response_mode,
+            cfg.prompts.prop_dev_prompt_template_name,
+            answer_format=cfg.oracle.answer_format,
+            response_mode=cfg.oracle.response_mode,
         )
-        if ctx.cfg.prompts.prop_usr_prompt_template_name:
+        if cfg.prompts.prop_usr_prompt_template_name:
             developer_prompt_map["OPROP"] = prop_dev_prompt_text
         developer_prompt_map["DPROP"] = prop_dev_prompt_text
 
@@ -550,16 +547,112 @@ def consult_oracle(ctx: PipelineContext, initial_alignment: AlignmentResult, pro
     ###
 
     inst_dev_prompt_text = None
-    if ctx.cfg.prompts.inst_usr_prompt_template_name:
+    if cfg.prompts.inst_usr_prompt_template_name:
         inst_dev_prompt_text = dp.get_developer_prompt(
-            ctx.cfg.prompts.inst_dev_prompt_template_name,
-            answer_format=ctx.cfg.oracle.answer_format,
-            response_mode=ctx.cfg.oracle.response_mode,
+            cfg.prompts.inst_dev_prompt_template_name,
+            answer_format=cfg.oracle.answer_format,
+            response_mode=cfg.oracle.response_mode,
         )
         developer_prompt_map["INST"] = inst_dev_prompt_text
 
     if len(developer_prompt_map.keys()) == 0:
         developer_prompt_map = None
+
+    return cls_dev_prompt_text, developer_prompt_map
+
+
+def _consult(oracle_cfg, prompts: dict, candidates_df: pd.DataFrame, bidirectional: bool,
+             developer_prompt_text: str, developer_prompt_map: dict | None,
+             few_shot_examples=None) -> pd.DataFrame | None:
+    """Dispatch one consultation campaign; None when it aborted under the failure tolerance."""
+    import logmap_llm.oracle.consultation as oc
+
+    kwargs = dict(
+        m_ask_prompts=prompts,
+        m_ask_init_alignment_df=candidates_df,
+        oracle_cfg=oracle_cfg,
+        developer_prompt_text=developer_prompt_text,
+        developer_prompt_map=developer_prompt_map,
+        few_shot_examples=few_shot_examples,
+        **oracle_cfg.consult_kwargs,
+    )
+    if bidirectional:
+        return oc.consult_oracle_bidirectional(**kwargs)
+    return oc.consult_oracle_for_mappings_to_ask(**kwargs)
+
+
+def select_model(ctx: PipelineContext, prompt_build_result: PromptBuildResult) -> ModelSelectionResult:
+    """
+    Step 2b (only when [model_selection].automatic = true): ask every permitted model
+    configuration the anchor-derived questions stage two rendered, rank the candidates by the
+    number answered correctly, and make the best one the run's oracle from here on.
+    Self-supervised: LogMap's anchors are the labels; no reference alignment is read.
+    """
+    from logmap_llm.pipeline.model_selection import (
+        load_ranking_artifact, rank_candidates, score_candidate,
+    )
+    from logmap_llm.pipeline.reporting import classify_endpoint
+
+    step("\n[Step 2b] Automatic model selection")
+
+    selection_path = ctx.run_paths.model_selection_json()
+    selection_path.unlink(missing_ok=True)
+
+    if prompt_build_result.n_prompts == 0:
+        warning("[Step 2b] M_ask is empty, so there is nothing to consult; selection skipped")
+        atomic_json_write_strict(
+            selection_path, {"schema": 1, "status": "skipped", "reason": "empty M_ask"}, indent=2,
+        )
+        return ModelSelectionResult()
+
+    ranking_path = ctx.run_paths.model_ranking_json()
+    if not ranking_path.is_file():
+        fatal(f"automatic model selection requires the ranking prompts artifact: {ranking_path}",
+              FileNotFoundError)
+    ranking_df, prompts = load_ranking_artifact(ranking_path)
+    if ranking_df.empty:
+        fatal("automatic model selection: stage two rendered no anchor question", RuntimeError)
+
+    candidates = ctx.cfg.candidate_oracle_configs()
+    cls_dev_prompt_text, developer_prompt_map = _developer_prompts(ctx.cfg)
+    bidirectional = _detect_bidirectional(prompts)
+    records = []
+
+    for index, candidate in enumerate(candidates):
+        step(f"[Step 2b] Candidate {index + 1}/{len(candidates)}: {candidate.model_name} "
+             f"({classify_endpoint(candidate.base_url)}), {len(ranking_df)} questions")
+        predictions = _consult(
+            candidate, prompts, ranking_df, bidirectional, cls_dev_prompt_text, developer_prompt_map,
+        )
+        record = score_candidate(index, candidate, ranking_df, predictions)
+        if predictions is None:
+            warning(f"[Step 2b] {candidate.model_name}: consultation aborted; ranked last")
+        step(f"[Step 2b] {candidate.model_name}: {record['correct']}/{record['asked']} correct, "
+             f"{record['errors']} unanswered")
+        records.append(record)
+
+    ranking = rank_candidates(records)
+    selected = ranking[0]
+    # every later phase (consultation, reporting) reads the winner from the shared config
+    ctx.cfg = ctx.cfg.model_copy(update={"oracle": candidates[selected["index"]]})
+    atomic_json_write_strict(
+        selection_path,
+        {"schema": 1, "status": "selected", "questions": len(ranking_df),
+         "ranking": ranking, "selected": selected},
+        indent=2,
+    )
+    success(f"[Step 2b] Selected {selected['model_name']} "
+            f"({selected['correct']}/{selected['asked']} correct)")
+    return ModelSelectionResult(questions=len(ranking_df), ranking=ranking, selected=selected)
+
+
+def consult_oracle(ctx: PipelineContext, initial_alignment: AlignmentResult, prompt_build_result: PromptBuildResult) -> OracleResult:
+    """
+    Step 3: Consult Oracle for mappings to ask.
+    """
+    step("\n[Step 3] Consult Oracle for mappings to ask")
+
+    cls_dev_prompt_text, developer_prompt_map = _developer_prompts(ctx.cfg)
 
     ###
     # SWITCH ON CONSULT MODE (SPECIFIED IN CONFIG)
@@ -625,22 +718,13 @@ def consult_oracle(ctx: PipelineContext, initial_alignment: AlignmentResult, pro
 
             ctx.run_paths.predictions_csv().unlink(missing_ok=True)
 
-            oracle_kwargs = dict(
-                m_ask_prompts=prompt_build_result.prompts,
-                m_ask_init_alignment_df=initial_alignment.m_ask_df,
-                oracle_cfg=ctx.cfg.oracle,
-                developer_prompt_text=cls_dev_prompt_text,
-                developer_prompt_map=developer_prompt_map,
-                few_shot_examples=few_shot_examples,
-                **ctx.cfg.oracle.consult_kwargs,
+            mode = " (bidirectional)" if prompt_build_result.bidirectional else ""
+            step(f"[Step 3] Consulting LLM oracle{mode} with model: {ctx.cfg.oracle.model_name}")
+            oracle_predictions_df = _consult(
+                ctx.cfg.oracle, prompt_build_result.prompts, initial_alignment.m_ask_df,
+                prompt_build_result.bidirectional, cls_dev_prompt_text, developer_prompt_map,
+                few_shot_examples,
             )
-
-            if prompt_build_result.bidirectional:
-                step(f"[Step 3] Consulting LLM oracle (bidirectional) with model: {ctx.cfg.oracle.model_name}")
-                oracle_predictions_df = oc.consult_oracle_bidirectional(**oracle_kwargs)
-            else:
-                step(f"[Step 3] Consulting LLM oracle with model: {ctx.cfg.oracle.model_name}")
-                oracle_predictions_df = oc.consult_oracle_for_mappings_to_ask(**oracle_kwargs)
 
             if oracle_predictions_df is None:
                 fatal(

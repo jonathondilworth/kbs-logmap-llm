@@ -1,8 +1,11 @@
-"""Build strict leave-one-task-out, typed, query-RAG bundles.
+"""Build strict typed query-RAG bundles from the anchors of a campaign.
 
 Inputs are sealed harness alignments.  Evaluation references are never read:
 positives are accepted initial LogMap equivalence mappings outside the union
 of every campaign M_ask, and negatives are crossed only within one donor task.
+Demonstrations are leave-one-task-out by default (every example comes from
+another task); a plan with ``"anchor_pool": "pooled"`` makes the receiver's
+own anchors eligible as well.
 
 CLI::
 
@@ -38,6 +41,8 @@ from logmap_llm.oracle.rag.encoder import Encoder, ClsPooledEncoder
 from logmap_llm.oracle.rag.types import EntityKind
 from logmap_llm.pipeline.rag_fewshot import (
     _ANSWER_PAIRS,
+    DEFAULT_PREBUILT_ANCHOR_POOL,
+    PREBUILT_SELECTION_POLICIES,
     STRICT_PREBUILT_SELECTION_POLICY,
     rag_dataset_fingerprint,
 )
@@ -45,7 +50,7 @@ from logmap_llm.utils.data import dedupe_m_ask_by_uri_pair
 
 PLAN_KIND = "logmap-llm-rag-bundle-plan"
 BUNDLE_KIND = "logmap-llm-prebuilt-few-shot"
-SELECTION_POLICY = STRICT_PREBUILT_SELECTION_POLICY
+SELECTION_POLICY = STRICT_PREBUILT_SELECTION_POLICY  # the leave-one-task-out default
 PREPROCESSING_VERSION = "v1"
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 _REVISION = re.compile(r"^[0-9a-fA-F]{40,64}$")
@@ -121,6 +126,7 @@ class PlanSpec:
     encoder: EncoderSpec
     task_descriptors: tuple[dict[str, str], ...]
     receiver_task_ids: tuple[str, ...]
+    anchor_pool: str = DEFAULT_PREBUILT_ANCHOR_POOL
 
 
 @dataclass(frozen=True)
@@ -164,8 +170,12 @@ class PairRow:
 def load_plan(path: str | os.PathLike[str]) -> PlanSpec:
     source = Path(path).resolve()
     raw = _json(source)
-    if set(raw) != {"schema", "kind", "encoder", "tasks", "receiver_task_ids"}:
+    required = {"schema", "kind", "encoder", "tasks", "receiver_task_ids"}
+    if not required <= set(raw) <= required | {"anchor_pool"}:
         raise BundleError("unsupported bundle-plan fields")
+    anchor_pool = raw.get("anchor_pool", DEFAULT_PREBUILT_ANCHOR_POOL)
+    if anchor_pool not in PREBUILT_SELECTION_POLICIES:
+        raise BundleError(f"anchor_pool must be one of {sorted(PREBUILT_SELECTION_POLICIES)}")
     if raw["schema"] != 1 or raw["kind"] != PLAN_KIND:
         raise BundleError(f"plan must be schema 1, kind {PLAN_KIND!r}")
     enc = raw["encoder"]
@@ -201,7 +211,7 @@ def load_plan(path: str | os.PathLike[str]) -> PlanSpec:
     return PlanSpec(
         source, sha256_file(source),
         EncoderSpec(enc["model"], enc["revision"].lower(), enc["device"]),
-        tuple(tasks), tuple(sorted(receivers)),
+        tuple(tasks), tuple(sorted(receivers)), anchor_pool,
     )
 
 
@@ -433,11 +443,12 @@ def _encode(encoder: Encoder, texts: list[str], label: str) -> np.ndarray:
     return matrix
 
 
-def _select(query, receiver, anchors, matrix, vector, excluded, positives):
+def _select(query, receiver, anchors, matrix, vector, excluded, positives, pooled=False):
+    # pooled: the receiver's own anchors compete with every other task's
     eligible = [i for i, anchor in enumerate(anchors)
-                if anchor.task != receiver and anchor.row.kind == query.row.kind]
+                if (pooled or anchor.task != receiver) and anchor.row.kind == query.row.kind]
     if len(eligible) < 2:
-        raise BundleError(f"{receiver}/{query.row.key}: fewer than two held-out {query.row.kind.value} anchors")
+        raise BundleError(f"{receiver}/{query.row.key}: fewer than two eligible {query.row.kind.value} anchors")
     scores = matrix @ vector.reshape(-1)
     ranked = sorted(eligible, key=lambda i: (-float(scores[i]), anchors[i].id))
 
@@ -503,6 +514,8 @@ def generate_bundle_documents(plan: PlanSpec, tasks: Sequence[Any], encoder: Enc
     if not encoder_pre:
         raise BundleError("encoder has no preprocessing identity")
     task_map = {task.task_id: task for task in tasks}
+    pooled = plan.anchor_pool == "pooled"
+    policy = PREBUILT_SELECTION_POLICIES[plan.anchor_pool]
     planned = {task["task_id"] for task in plan.task_descriptors}
     if len(task_map) != len(tasks) or set(task_map) != planned:
         raise BundleError("loaded tasks do not exactly match the plan")
@@ -521,7 +534,7 @@ def generate_bundle_documents(plan: PlanSpec, tasks: Sequence[Any], encoder: Enc
         receiver, receiver_queries = task_map[receiver_id], queries[receiver_id]
         query_matrix = _encode(encoder, [query.text for query in receiver_queries], receiver_id)
         chosen = {query.row.key: _select(query, receiver_id, anchors, matrix, query_matrix[index],
-                                         excluded, known_positive)
+                                         excluded, known_positive, pooled=pooled)
                   for index, query in enumerate(receiver_queries)}
         if len(chosen) != len(receiver_queries):
             raise BundleError(f"{receiver_id}: duplicate query keys")
@@ -537,7 +550,7 @@ def generate_bundle_documents(plan: PlanSpec, tasks: Sequence[Any], encoder: Enc
         by_key = {query.row.key: query for query in receiver_queries}
         corpus_hashes = {
             kind: canonical_hash([(a.id, a.task, _sha_text(a.text)) for a in anchors
-                                  if a.task != receiver_id and a.row.kind == kind])
+                                  if (pooled or a.task != receiver_id) and a.row.kind == kind])
             for kind in EntityKind
         }
         examples, traces = {}, {}
@@ -565,12 +578,12 @@ def generate_bundle_documents(plan: PlanSpec, tasks: Sequence[Any], encoder: Enc
                     "exclusions": [{"count": len(excluded), "reason": "campaign M_ask union"}],
                     "fallback_reason": None, "corpus_hash": corpus_hash,
                     "index_hash": canonical_hash((corpus_hash, plan.encoder.model,
-                                                   plan.encoder.revision, encoder_pre, SELECTION_POLICY)),
+                                                   plan.encoder.revision, encoder_pre, policy)),
                     "encoder_repo": plan.encoder.model, "encoder_revision": plan.encoder.revision,
                     "encoder_kind": "cls_transformer", "encoder_device": plan.encoder.device,
                     "preprocessing_version": PREPROCESSING_VERSION,
                     "encoder_preprocessing_version": encoder_pre,
-                    "selection_policy": SELECTION_POLICY, "dataset_sha": dataset_sha,
+                    "selection_policy": policy, "dataset_sha": dataset_sha,
                     "campaign_m_ask_sha256": excluded_sha, "query_direction": direction,
                 }
         expected = {query.row.key for query in receiver_queries}
@@ -593,14 +606,14 @@ def generate_bundle_documents(plan: PlanSpec, tasks: Sequence[Any], encoder: Enc
                 "data_property_prompt_family": receiver.prompt.data_property_family,
                 "instance_prompt_family": receiver.prompt.instance_family,
                 "bidirectional": receiver.prompt.bidirectional,
-                "selection_policy": SELECTION_POLICY,
+                "selection_policy": policy, "anchor_pool": plan.anchor_pool,
                 "encoder_preprocessing_version": encoder_pre,
                 "receiver_alignment_id": receiver.alignment_id,
                 "receiver_config_sha256": receiver.config_sha256,
                 "receiver_core_sha256": receiver.core_sha256,
                 "campaign_m_ask_sha256": excluded_sha,
                 "campaign_m_ask_pairs": len(excluded),
-                "donor_task_ids": sorted(set(task_map) - {receiver_id}),
+                "donor_task_ids": sorted(task_map) if pooled else sorted(set(task_map) - {receiver_id}),
                 "plan_sha256": plan.source_sha256,
             },
             "examples": examples, "traces": traces,

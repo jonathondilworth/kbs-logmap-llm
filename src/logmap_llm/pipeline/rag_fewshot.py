@@ -52,6 +52,15 @@ _PREBUILT_BUNDLE_KIND = "logmap-llm-prebuilt-few-shot"
 _PREBUILT_BUNDLE_SCHEMA = 1
 _RAG_PREPROCESSING_VERSION = "v1"
 STRICT_PREBUILT_SELECTION_POLICY = "strict-loo-typed-equivalence-pnpn-v2"
+POOLED_PREBUILT_SELECTION_POLICY = "strict-pooled-typed-equivalence-pnpn-v2"
+# few_shot.prebuilt_anchor_pool -> the selection policy a bundle must have been built under.
+# leave-one-task-out: every demonstration comes from another task (the ISWC campaigns);
+# pooled: the receiver's own anchors are eligible as well.
+PREBUILT_SELECTION_POLICIES = {
+    "leave-one-task-out": STRICT_PREBUILT_SELECTION_POLICY,
+    "pooled": POOLED_PREBUILT_SELECTION_POLICY,
+}
+DEFAULT_PREBUILT_ANCHOR_POOL = "leave-one-task-out"
 
 
 def _sha256_file(path: str) -> str:
@@ -153,6 +162,7 @@ def load_prebuilt_few_shot_bundle(
     data_property_prompt_family: Optional[str],
     instance_prompt_family: Optional[str],
     bidirectional: bool,
+    anchor_pool: Optional[str] = None,
 ) -> tuple[dict, dict]:
     """Load one strictly bound, already-rendered per-query RAG bundle.
 
@@ -168,6 +178,11 @@ def load_prebuilt_few_shot_bundle(
         raise FileNotFoundError(f"M_ask file does not exist: {m_ask_path}")
     if k != 4:
         raise ValueError("Strict prebuilt few-shot bundles require few_shot_k = 4")
+    anchor_pool = anchor_pool or DEFAULT_PREBUILT_ANCHOR_POOL
+    try:
+        selection_policy = PREBUILT_SELECTION_POLICIES[anchor_pool]
+    except KeyError as exc:
+        raise ValueError(f"Unknown prebuilt anchor pool {anchor_pool!r}") from exc
     answer_format = _wire_scalar(answer_format)
     response_mode = _wire_scalar(response_mode)
 
@@ -224,7 +239,7 @@ def load_prebuilt_few_shot_bundle(
         "data_property_prompt_family": data_property_prompt_family,
         "instance_prompt_family": instance_prompt_family,
         "bidirectional": bidirectional,
-        "selection_policy": STRICT_PREBUILT_SELECTION_POLICY,
+        "selection_policy": selection_policy,
     }
     for field, expected in expected_binding.items():
         if field not in binding:
@@ -291,7 +306,7 @@ def load_prebuilt_few_shot_bundle(
             "encoder_repo": encoder_model,
             "encoder_revision": encoder_revision,
             "preprocessing_version": _RAG_PREPROCESSING_VERSION,
-            "selection_policy": STRICT_PREBUILT_SELECTION_POLICY,
+            "selection_policy": selection_policy,
             "fallback_reason": None,
         }
         for field, expected in required_trace.items():
@@ -315,14 +330,16 @@ def load_prebuilt_few_shot_bundle(
                     "must have a boolean label"
                 )
             donor_task = record.get("donor_task")
+            # Under 'pooled' the receiver's own anchors are legal donors.
             if (
                 not isinstance(donor_task, str)
                 or not donor_task.strip()
-                or donor_task == receiver_task
+                or (anchor_pool != "pooled" and donor_task == receiver_task)
             ):
                 raise ValueError(
                     f"Prebuilt few-shot trace {query_key!r} selected[{index}] must "
-                    "name a non-empty donor_task different from receiver_task"
+                    "name a non-empty donor_task"
+                    + ("" if anchor_pool == "pooled" else " different from receiver_task")
                 )
             if record.get("entity_type") != expected_entity_types[query_key]:
                 raise ValueError(

@@ -18,6 +18,7 @@ from logmap_llm.pipeline.contracts import (
     EvaluationResult,
     OracleResult,
     PromptBuildResult,
+    ModelSelectionResult,
 )
 from logmap_llm.pipeline.paths import PipelinePaths
 from logmap_llm.utils.io import atomic_json_write_strict
@@ -174,6 +175,8 @@ def validate_run_artifacts(
         required.append(("prompts", run_paths.prompts_json()))
         if cfg.few_shot.few_shot_k > 0:
             required.append(("few_shot", run_paths.few_shot_json()))
+    if cfg.automatic_model_selection:
+        required.append(("model_selection", run_paths.model_selection_json()))
     if cfg.pipeline.consult_oracle.value in {"consult", "reuse"}:
         required.append(("predictions", run_paths.predictions_csv()))
         required.append(("annotated_txt", run_paths.annotated_txt()))
@@ -213,6 +216,8 @@ def print_timing_summary(timing: TimingRecord, n_consultations: int) -> None:
     print()
     print(f"  Alignment          : {format_duration(timing.align_seconds)}")
     print(f"  Prompt building    : {format_duration(timing.prompt_build_seconds)}")
+    if timing.model_selection_seconds is not None:
+        print(f"  Model selection    : {format_duration(timing.model_selection_seconds)}")
     print(f"  Oracle consultation: {format_duration(timing.consult_seconds)}")
     if n_consultations > 0 and timing.consult_seconds:
         per_consult = timing.consult_seconds / n_consultations
@@ -228,12 +233,17 @@ def print_experimental_parameters(
     oracle_result: OracleResult,
     prompt_result: PromptBuildResult,
     timing: TimingRecord,
+    model_selection: ModelSelectionResult | None = None,
 ) -> None:
     """Print experimental parameters."""
     step("[Step 7] Experimental Parameters")
     print()
     print(f"  Task name           : {cfg.alignmentTask.task_name}")
-    print(f"  Model               : {cfg.oracle.model_name}")
+    selected = (
+        f" (auto-selected from {len(model_selection.ranking)} candidates)"
+        if model_selection is not None and model_selection.performed else ""
+    )
+    print(f"  Model               : {cfg.oracle.model_name}{selected}")
     print(f"  Endpoint            : {classify_endpoint(cfg.oracle.base_url)}")
     print(f"  Prompt template     : {cfg.prompts.cls_usr_prompt_template_name}")
     print(f"  Developer prompt    : {cfg.prompts.cls_dev_prompt_template_name}")
@@ -257,6 +267,7 @@ def write_results_file(
     prompt_result: PromptBuildResult,
     run_paths: PipelinePaths,
     stopped_after: str | None = None,
+    model_selection: ModelSelectionResult | None = None,
 ) -> None:
     """Atomically publish the compact, redacted canonical run result."""
     validate_run_artifacts(cfg, run_paths, stopped_after=stopped_after)
@@ -310,6 +321,8 @@ def write_results_file(
         # here checksums the per-lane fallback rate into the run result.
         ("rag_negative_fallback", run_paths.output_dir / "rag_negative_fallback.json"),
         ("rag_traces", run_paths.output_dir / "rag_traces.json"),
+        ("model_ranking_prompts", run_paths.model_ranking_json()),
+        ("model_selection", run_paths.model_selection_json()),
     ]
     artifacts = [
         record
@@ -338,6 +351,7 @@ def write_results_file(
         "timing": {
             "align_seconds": timing.align_seconds,
             "prompt_build_seconds": timing.prompt_build_seconds,
+            "model_selection_seconds": timing.model_selection_seconds,
             "consult_seconds": timing.consult_seconds,
             "refine_seconds": timing.refine_seconds,
             "evaluate_seconds": timing.evaluate_seconds,
@@ -350,6 +364,14 @@ def write_results_file(
         "stopped_after": stopped_after,
         "artifacts": artifacts,
     }
+    if cfg.automatic_model_selection:
+        performed = model_selection is not None and model_selection.performed
+        results["model_selection"] = {
+            "status": "selected" if performed else "skipped",
+            "questions": model_selection.questions if performed else 0,
+            "ranking": model_selection.ranking if performed else [],
+            "selected": model_selection.selected if performed else None,
+        }
 
     atomic_json_write_strict(filepath, _json_safe(results), indent=2)
 
